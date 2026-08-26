@@ -1,0 +1,9 @@
+# @package _global_
+
+defaults:
+  - rt_ovn_objectnav_hm3d
+  - _self_
+
+habitat:
+  dataset:
+    data_path: /opt/rt_ovn/data/datasets/objectnav/hm3d/v1/{split}/{split}.json.gz

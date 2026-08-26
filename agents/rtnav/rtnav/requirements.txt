@@ -1,0 +1,26 @@
+# open3d-cpu has no Linux ARM64 wheel. Open3D 0.18 is the newest release that
+# publishes both cp310 AArch64 (Jetson Thor) and x86_64 wheels.
+open3d==0.18.0
+scikit-image>=0.22
+opencv-python>=4.9.0
+accelerate>=0.26.0
+sentence-transformers
+sentencepiece
+rerun-sdk
+aiohttp
+imageio
+imageio-ffmpeg
+adjustText
+pytesseract
+pybind11
+bitsandbytes
+autoawq
+# vLLM 0.23.0 installs xgrammar, which currently requires Transformers 4.x.
+transformers==4.57.6
+timm
+# Needed by baseline_pointnav: the BDAI PointNav checkpoint pickles an
+# omegaconf DictConfig as its training config, which has to be
+# deserialized at torch.load time even on the no-habitat fallback path.
+omegaconf
+git+https://github.com/naokiyokoyama/frontier_exploration.git
+git+https://github.com/naokiyokoyama/depth_camera_filtering

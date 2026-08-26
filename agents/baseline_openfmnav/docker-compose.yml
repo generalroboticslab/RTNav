@@ -1,0 +1,133 @@
+# docker-compose.yml — OpenFMNav distributed evaluation via ROS2
+#
+# Usage:
+#   cd agents/baseline_openfmnav
+#   docker compose --profile build build agent_base
+#   docker compose build env agent
+#   OPENAI_API_KEY=... BENCHMARK=hm3d MODE=sync docker compose up env agent
+#   OPENAI_API_KEY=... BENCHMARK=hm3d MODE=async docker compose up env agent
+#   OPENAI_API_KEY=... BENCHMARK=ovon MODE=sync docker compose up env agent
+#   OPENAI_API_KEY=... BENCHMARK=ovon MODE=async docker compose up env agent
+
+x-common: &common
+  runtime: nvidia
+  shm_size: "64g"
+  ipc: host
+  network_mode: host
+  environment: &common-env
+    NVIDIA_VISIBLE_DEVICES: all
+    NVIDIA_DRIVER_CAPABILITIES: all
+    HOME: /tmp
+    MPLCONFIGDIR: /tmp/matplotlib
+    RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
+    ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-45}"
+    CYCLONEDDS_URI: file:///opt/rt_ovn/utils/cyclonedds.xml
+    MODE: "${MODE:-sync}"
+    BENCHMARK: "${BENCHMARK:-hm3d}"
+    BASELINE: openfmnav
+    HOST_USER_PATH: /opt/openfmnav
+    HOST_CHOWN_PATHS: /opt/openfmnav/logs:/opt/.cache
+    OPENFMNAV_MODE: "${MODE:-sync}"
+
+services:
+  agent_base:
+    build:
+      context: ..
+      dockerfile: ../docker/Dockerfile.agent
+    image: rt-ovn-agent-base:latest
+    profiles: ["build"]
+
+  env:
+    <<: *common
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile.env
+    image: rt-ovn-env:latest
+    container_name: openfmnav_env
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${GPU:-0}"]
+              capabilities: [gpu]
+    environment:
+      <<: *common-env
+      CUDA_VISIBLE_DEVICES: "0"
+      ENV_STATS_PATH: /opt/openfmnav/logs/env_stats.json
+      VIDEO_DIR: ""
+      DISABLE_TOP_DOWN_MAP: "1"
+      HYDRA_CONFIG_PATH: /opt/rt_ovn/env_config
+      HYDRA_CONFIG_NAME: "${HYDRA_CONFIG_NAME:-${BENCHMARK:-hm3d}}"
+      HYDRA_RUN_DIR: /opt/openfmnav/logs/hydra
+      EVAL_SPLIT: "${EVAL_SPLIT:-}"
+      EPISODE_OFFSET: "${EPISODE_OFFSET:-0}"
+      EPISODE_COUNT: "${EPISODE_COUNT:-0}"
+    volumes:
+      - ./OpenFMNav:/opt/openfmnav
+      - ${DATA_DIR:?Set DATA_DIR to the dataset root from docs/datasets.md}:/opt/rt_ovn/data:ro
+      - ./logs:/opt/openfmnav/logs
+      - ../utils:/opt/rt_ovn/utils:ro
+      - ../../envs/env_node.py:/opt/rt_ovn/env_node.py:ro
+      - ../../envs/habitat_env.py:/opt/rt_ovn/habitat_env.py:ro
+      - ../../envs/async_ui.py:/opt/rt_ovn/async_ui.py:ro
+      - ../../envs/config:/opt/rt_ovn/env_config:ro
+    working_dir: /opt/openfmnav
+    command: >
+      bash -c "
+        source /opt/ros2_ws/install/setup.bash 2>/dev/null || true &&
+        cd /opt/openfmnav &&
+        python /opt/rt_ovn/env_node.py
+      "
+
+  agent:
+    <<: *common
+    build:
+      context: ../..
+      dockerfile: agents/baseline_openfmnav/Dockerfile
+      args:
+        BASE_IMAGE: rt-ovn-agent-base:latest
+    image: openfmnav-agent:latest
+    container_name: openfmnav_agent
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${GPU:-0}"]
+              capabilities: [gpu]
+    environment:
+      <<: *common-env
+      CUDA_VISIBLE_DEVICES: "0"
+      NUM_EPISODES: "${NUM_EPISODES:--1}"
+      VIDEO_DIR: /opt/openfmnav/logs/videos
+      AGENT_VIDEO_MODE: "${VIDEO:-none}"
+      OPENFMNAV_ROOT: /opt/openfmnav
+      OPENFMNAV_TASK_CONFIG: "${OPENFMNAV_TASK_CONFIG:-tasks/objectnav_hm3d.yaml}"
+      OPENFMNAV_VERSION: v1.1
+      OPENFMNAV_NUM_LOCAL_STEPS: "${OPENFMNAV_NUM_LOCAL_STEPS:-20}"
+      OPENFMNAV_PROMPT_TYPE: "${OPENFMNAV_PROMPT_TYPE:-scoring}"
+      OPENFMNAV_TEXT_THRESHOLD: "${OPENFMNAV_TEXT_THRESHOLD:-0.55}"
+      OPENFMNAV_BOUNDARY_COEFF: "${OPENFMNAV_BOUNDARY_COEFF:-12}"
+      OPENFMNAV_TAG_FREQ: "${OPENFMNAV_TAG_FREQ:-100}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      XDG_CACHE_HOME: /opt/.cache
+      HF_HOME: /opt/.cache/huggingface
+      TRANSFORMERS_CACHE: /opt/.cache/huggingface
+      TORCH_HOME: /opt/.cache/torch
+    volumes:
+      - ./OpenFMNav:/opt/openfmnav
+      - ${DATA_DIR:?Set DATA_DIR to the dataset root from docs/datasets.md}:/opt/openfmnav/data
+      - ./logs:/opt/openfmnav/logs
+      - ../utils:/opt/rt_ovn/utils:ro
+      - ./agent_node.py:/opt/rt_ovn/agent_node.py:ro
+    working_dir: /opt/openfmnav
+    depends_on:
+      - env
+    command: >
+      bash -c "
+        source /opt/ros2_ws/install/setup.bash 2>/dev/null || true &&
+        cd /opt/openfmnav &&
+        mkdir -p /opt/.cache/huggingface /opt/.cache/torch &&
+        python /opt/rt_ovn/agent_node.py
+      "

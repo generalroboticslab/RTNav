@@ -1,0 +1,16 @@
+uint64 step_id
+sensor_msgs/Image rgb
+sensor_msgs/Image depth
+float32[2] gps
+float32[3] gps_3d
+float32 compass
+float32 heading
+float32[3] sensor_pose
+float32 camera_pitch
+float32[] frontier_sensor
+uint32 num_frontiers
+float32[] clip_objectgoal
+int32 objectgoal
+float32 reward
+bool done
+string info_json

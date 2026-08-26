@@ -1,0 +1,133 @@
+# docker-compose.yml — L3MVN distributed evaluation via ROS2
+#
+# Usage:
+#   cd agents/baseline_l3mvn
+#   docker compose --profile build build agent_base
+#   docker compose build env agent
+#   BENCHMARK=hm3d MODE=sync docker compose up env agent
+#   BENCHMARK=hm3d MODE=async docker compose up env agent
+
+x-common: &common
+  runtime: nvidia
+  shm_size: "64g"
+  ipc: host
+  network_mode: host
+  environment: &common-env
+    NVIDIA_VISIBLE_DEVICES: all
+    NVIDIA_DRIVER_CAPABILITIES: all
+    HOME: /tmp
+    MPLCONFIGDIR: /tmp/matplotlib
+    RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
+    ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-44}"
+    CYCLONEDDS_URI: file:///opt/rt_ovn/utils/cyclonedds.xml
+    MODE: "${MODE:-sync}"
+    BENCHMARK: "${BENCHMARK:-hm3d}"
+    BASELINE: l3mvn
+    HOST_USER_PATH: /opt/l3mvn
+    HOST_CHOWN_PATHS: /opt/l3mvn/logs:/opt/.cache
+    L3MVN_MODE: "${MODE:-sync}"
+    OMP_NUM_THREADS: "${OMP_NUM_THREADS:-1}"
+    MKL_NUM_THREADS: "${MKL_NUM_THREADS:-1}"
+    OPENBLAS_NUM_THREADS: "${OPENBLAS_NUM_THREADS:-1}"
+    NUMEXPR_NUM_THREADS: "${NUMEXPR_NUM_THREADS:-1}"
+    KMP_DUPLICATE_LIB_OK: "${KMP_DUPLICATE_LIB_OK:-TRUE}"
+
+services:
+  agent_base:
+    build:
+      context: ..
+      dockerfile: ../docker/Dockerfile.agent
+    image: rt-ovn-agent-base:latest
+    profiles: ["build"]
+
+  env:
+    <<: *common
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile.env
+    image: rt-ovn-env:latest
+    container_name: l3mvn_env
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${GPU:-0}"]
+              capabilities: [gpu]
+    environment:
+      <<: *common-env
+      CUDA_VISIBLE_DEVICES: "0"
+      ENV_STATS_PATH: /opt/l3mvn/logs/env_stats.json
+      VIDEO_DIR: "${VIDEO_DIR:-/opt/l3mvn/logs/videos}"
+      HYDRA_CONFIG_PATH: /opt/rt_ovn/env_config
+      HYDRA_CONFIG_NAME: "${HYDRA_CONFIG_NAME:-${BENCHMARK:-hm3d}}"
+      HYDRA_RUN_DIR: /opt/l3mvn/logs/hydra
+      EVAL_SPLIT: "${EVAL_SPLIT:-}"
+      EPISODE_OFFSET: "${EPISODE_OFFSET:-0}"
+      EPISODE_COUNT: "${EPISODE_COUNT:-0}"
+    volumes:
+      - ./L3MVN:/opt/l3mvn
+      - ${DATA_DIR:?Set DATA_DIR to the dataset root from docs/datasets.md}:/opt/rt_ovn/data:ro
+      - ./logs:/opt/l3mvn/logs
+      - ../utils:/opt/rt_ovn/utils:ro
+      - ../../envs/env_node.py:/opt/rt_ovn/env_node.py:ro
+      - ../../envs/habitat_env.py:/opt/rt_ovn/habitat_env.py:ro
+      - ../../envs/async_ui.py:/opt/rt_ovn/async_ui.py:ro
+      - ../../envs/config:/opt/rt_ovn/env_config:ro
+    working_dir: /opt/l3mvn
+    command: >
+      bash -c "
+        source /opt/ros2_ws/install/setup.bash 2>/dev/null || true &&
+        cd /opt/l3mvn &&
+        python /opt/rt_ovn/env_node.py
+      "
+
+  agent:
+    <<: *common
+    build:
+      context: ../..
+      dockerfile: agents/baseline_l3mvn/Dockerfile
+      args:
+        BASE_IMAGE: rt-ovn-agent-base:latest
+    image: l3mvn-agent:latest
+    container_name: l3mvn_agent
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${GPU:-0}"]
+              capabilities: [gpu]
+    environment:
+      <<: *common-env
+      CUDA_VISIBLE_DEVICES: "0"
+      NUM_EPISODES: "${NUM_EPISODES:--1}"
+      VIDEO_DIR: "${VIDEO_DIR:-/opt/l3mvn/logs/videos}"
+      L3MVN_ROOT: /opt/l3mvn
+      L3MVN_REDNET_PATH: RedNet/model/rednet_semmap_mp3d_40.pth
+      L3MVN_NUM_LOCAL_STEPS: "${L3MVN_NUM_LOCAL_STEPS:-10}"
+      L3MVN_TASK_CONFIG: tasks/objectnav_hm3d.yaml
+      L3MVN_VERSION: v1
+      XDG_CACHE_HOME: /opt/.cache
+      HF_HOME: /opt/.cache/huggingface
+      TRANSFORMERS_CACHE: /opt/.cache/huggingface
+      TORCH_HOME: /opt/.cache/torch
+      FVCORE_CACHE: /opt/.cache/fvcore
+    volumes:
+      - ./L3MVN:/opt/l3mvn
+      - ${DATA_DIR:?Set DATA_DIR to the dataset root from docs/datasets.md}/datasets:/opt/l3mvn/data/datasets:ro
+      - ${DATA_DIR:?Set DATA_DIR to the dataset root from docs/datasets.md}/scene_datasets:/opt/l3mvn/data/scene_datasets:ro
+      - ${DATA_DIR:?Set DATA_DIR to the dataset root from docs/datasets.md}/versioned_data:/opt/l3mvn/data/versioned_data:ro
+      - ./logs:/opt/l3mvn/logs
+      - ../utils:/opt/rt_ovn/utils:ro
+      - ./agent_node.py:/opt/rt_ovn/agent_node.py:ro
+    working_dir: /opt/l3mvn
+    depends_on:
+      - env
+    command: >
+      bash -c "
+        source /opt/ros2_ws/install/setup.bash 2>/dev/null || true &&
+        cd /opt/l3mvn &&
+        mkdir -p /opt/.cache/huggingface /opt/.cache/torch /opt/.cache/fvcore &&
+        python /opt/rt_ovn/agent_node.py
+      "

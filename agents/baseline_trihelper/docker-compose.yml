@@ -1,0 +1,126 @@
+# docker-compose.yml — TriHelper distributed evaluation via ROS2
+#
+# Usage:
+#   cd agents/baseline_trihelper
+#   docker compose --profile build build agent_base
+#   docker compose build env agent
+#   MODE=sync docker compose up env agent
+#   MODE=async docker compose up env agent
+
+x-common: &common
+  runtime: nvidia
+  shm_size: "64g"
+  ipc: host
+  network_mode: host
+  environment: &common-env
+    NVIDIA_VISIBLE_DEVICES: all
+    NVIDIA_DRIVER_CAPABILITIES: all
+    HOME: /tmp
+    MPLCONFIGDIR: /tmp/matplotlib
+    RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
+    ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-45}"
+    CYCLONEDDS_URI: file:///opt/rt_ovn/utils/cyclonedds.xml
+    MODE: "${MODE:-sync}"
+    BENCHMARK: hm3d
+    BASELINE: trihelper
+    HOST_USER_PATH: /opt/worker_logs
+    HOST_CHOWN_PATHS: /opt/worker_logs:/opt/.cache
+    OMP_NUM_THREADS: "${OMP_NUM_THREADS:-1}"
+    MKL_NUM_THREADS: "${MKL_NUM_THREADS:-1}"
+    OPENBLAS_NUM_THREADS: "${OPENBLAS_NUM_THREADS:-1}"
+    NUMEXPR_NUM_THREADS: "${NUMEXPR_NUM_THREADS:-1}"
+    KMP_DUPLICATE_LIB_OK: "${KMP_DUPLICATE_LIB_OK:-TRUE}"
+
+services:
+  agent_base:
+    build:
+      context: ..
+      dockerfile: ../docker/Dockerfile.agent
+    image: rt-ovn-agent-base:latest
+    profiles: ["build"]
+
+  env:
+    <<: *common
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile.env
+    image: rt-ovn-env:latest
+    container_name: trihelper_env
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${GPU:-0}"]
+              capabilities: [gpu]
+    environment:
+      <<: *common-env
+      CUDA_VISIBLE_DEVICES: "0"
+      ENV_STATS_PATH: /opt/worker_logs/env_stats.json
+      VIDEO_DIR: "${VIDEO_DIR:-/opt/worker_logs/videos}"
+      HYDRA_CONFIG_PATH: /opt/rt_ovn/env_config
+      HYDRA_CONFIG_NAME: hm3d
+      HYDRA_RUN_DIR: /opt/worker_logs/hydra
+      EVAL_SPLIT: "${EVAL_SPLIT:-}"
+      EPISODE_OFFSET: "${EPISODE_OFFSET:-0}"
+      EPISODE_COUNT: "${EPISODE_COUNT:-0}"
+    volumes:
+      - ./TriHelper:/opt/trihelper:ro
+      - ${DATA_DIR:?Set DATA_DIR to the dataset root from docs/datasets.md}:/opt/rt_ovn/data:ro
+      - ./logs:/opt/worker_logs
+      - ../utils:/opt/rt_ovn/utils:ro
+      - ../../envs/env_node.py:/opt/rt_ovn/env_node.py:ro
+      - ../../envs/habitat_env.py:/opt/rt_ovn/habitat_env.py:ro
+      - ../../envs/async_ui.py:/opt/rt_ovn/async_ui.py:ro
+      - ../../envs/config:/opt/rt_ovn/env_config:ro
+    working_dir: /opt/trihelper
+    command: >
+      bash -c "
+        source /opt/ros2_ws/install/setup.bash 2>/dev/null || true &&
+        cd /opt/trihelper &&
+        python /opt/rt_ovn/env_node.py
+      "
+
+  agent:
+    <<: *common
+    build:
+      context: ../..
+      dockerfile: agents/baseline_trihelper/Dockerfile
+      args:
+        BASE_IMAGE: rt-ovn-agent-base:latest
+    image: trihelper-agent:latest
+    container_name: trihelper_agent
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${GPU:-0}"]
+              capabilities: [gpu]
+    environment:
+      <<: *common-env
+      CUDA_VISIBLE_DEVICES: "0"
+      NUM_EPISODES: "${NUM_EPISODES:--1}"
+      VIDEO_DIR: "${VIDEO_DIR:-/opt/worker_logs/videos}"
+      AGENT_TRACE_PATH: "${AGENT_TRACE_PATH:-}"
+      XDG_CACHE_HOME: /opt/.cache
+      HF_HOME: /opt/.cache/huggingface
+      TRANSFORMERS_CACHE: /opt/.cache/huggingface
+      TORCH_HOME: /opt/.cache/torch
+      FVCORE_CACHE: /opt/.cache/fvcore
+    volumes:
+      - ./TriHelper:/opt/trihelper:ro
+      - ${HOME}/.cache/huggingface/hub:/.cache/huggingface/hub
+      - ./logs:/opt/worker_logs
+      - ../utils:/opt/rt_ovn/utils:ro
+      - ./agent_node.py:/opt/rt_ovn/agent_node.py:ro
+    working_dir: /opt/trihelper
+    depends_on:
+      - env
+    command: >
+      bash -c "
+        source /opt/ros2_ws/install/setup.bash 2>/dev/null || true &&
+        cd /opt/trihelper &&
+        mkdir -p /opt/.cache/huggingface /opt/.cache/torch /opt/.cache/fvcore /opt/worker_logs/trihelper_tmp &&
+        python /opt/rt_ovn/agent_node.py
+      "

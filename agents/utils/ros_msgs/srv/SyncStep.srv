@@ -1,0 +1,4 @@
+int32 action
+uint64 agent_step_id
+---
+ros_msgs/StepResult result

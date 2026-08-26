@@ -1,0 +1,43 @@
+diff --git a/src/stdgpu/cuda/impl/device.cpp b/src/stdgpu/cuda/impl/device.cpp
+--- a/src/stdgpu/cuda/impl/device.cpp
++++ b/src/stdgpu/cuda/impl/device.cpp
+@@ -76,8 +76,10 @@ print_device_information()
+     printf("|%*s%*s%*s|\n", gpu_name_space_left, " ", gpu_name_size, gpu_name.c_str(), gpu_name_space_right, " ");
+     printf("+---------------------------------------------------------+\n");
+     printf("| Compute Capability        :   %1d.%1d                       |\n", properties.major, properties.minor);
++#if CUDART_VERSION < 13000
+     printf("| Clock rate                :   %-6.0f MHz                |\n",
+            static_cast<double>(detail::kilo_to_mega_hertz(static_cast<float>(properties.clockRate))));
++#endif
+     printf("| Global Memory             :   %-6.3f GiB / %-6.3f GiB   |\n",
+            static_cast<double>(detail::byte_to_gibi_byte(static_cast<float>(free_memory))),
+            static_cast<double>(detail::byte_to_gibi_byte(static_cast<float>(total_memory))));
+diff --git a/src/stdgpu/iterator.h b/src/stdgpu/iterator.h
+--- a/src/stdgpu/iterator.h
++++ b/src/stdgpu/iterator.h
+@@ -26,6 +26,7 @@
+  */
+ 
+ #include <thrust/detail/pointer.h>
++#include <thrust/version.h>
+ #include <thrust/detail/reference.h> // Only forward declaration included by thrust/detail/pointer.h
+ 
+ #include <stdgpu/cstddef.h>
+@@ -51,7 +52,8 @@ using host_ptr = thrust::pointer<T, thrust::host_system_tag>;
+ using host_ptr = thrust::pointer<T, thrust::host_system_tag>;
+ 
+ } // namespace stdgpu
+ 
++#if THRUST_VERSION < 300000
+ //! @cond Doxygen_Suppress
+ namespace std // NOLINT(cert-dcl58-cpp)
+ {
+@@ -77,7 +79,8 @@ struct iterator_traits<stdgpu::host_ptr<T>> // NOLINT(cert-dcl58-cpp)
+ };
+ 
+ } // namespace std
+ //! @endcond
++#endif
+ 
+ namespace stdgpu
+ {

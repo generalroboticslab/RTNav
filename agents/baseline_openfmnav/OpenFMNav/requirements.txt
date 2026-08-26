@@ -1,0 +1,8 @@
+scikit-fmm
+scikit-learn
+scikit-image==0.21.0
+numpy>=1.20.2
+ifcfg
+transformers
+openai==0.28.1
+retry

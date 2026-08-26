@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Same-host DDS transport for VLFM evaluation containers.
+
+  The VLFM environment and agent use Docker host networking, so they share the
+  host loopback interface. Binding DDS to lo prevents Wi-Fi/Ethernet route
+  changes from invalidating the locators advertised by CycloneDDS.
+-->
+<CycloneDDS xmlns="https://cdds.io/config">
+  <Domain id="any">
+    <General>
+      <Interfaces>
+        <NetworkInterface name="lo" priority="default" multicast="false"/>
+      </Interfaces>
+      <AllowMulticast>false</AllowMulticast>
+    </General>
+    <Discovery>
+      <ParticipantIndex>auto</ParticipantIndex>
+      <MaxAutoParticipantIndex>120</MaxAutoParticipantIndex>
+      <Peers>
+        <Peer address="127.0.0.1"/>
+      </Peers>
+    </Discovery>
+  </Domain>
+</CycloneDDS>

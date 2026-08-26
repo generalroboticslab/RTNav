@@ -1,0 +1,130 @@
+# docker-compose.yml — rtnav distributed evaluation via ROS2
+#
+# Usage:
+#   cd agents/rtnav
+#   DATA_DIR=/path/to/data docker compose build env agent
+#   DATA_DIR=/path/to/data BENCHMARK=ovon docker compose up env agent
+#   DATA_DIR=/path/to/data BENCHMARK=hm3d_v2 docker compose up env agent
+
+x-common: &common
+  runtime: nvidia
+  shm_size: "64g"
+  ipc: host
+  network_mode: host
+  environment: &common-env
+    NVIDIA_VISIBLE_DEVICES: all
+    NVIDIA_DRIVER_CAPABILITIES: all
+    HOME: /tmp
+    MPLCONFIGDIR: /tmp/matplotlib
+    RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
+    ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-46}"
+    CYCLONEDDS_URI: file:///opt/rt_ovn/utils/cyclonedds.xml
+    MODE: "${MODE:-async}"
+    BENCHMARK: "${BENCHMARK:-ovon}"
+    BASELINE: rtnav
+    HOST_USER_PATH: /opt/rt_ovn
+    HOST_CHOWN_PATHS: /opt/rtnav/logs:/opt/.cache:/tmp/.cache
+    DISPLAY: "${DISPLAY:-}"
+    QT_X11_NO_MITSHM: "1"
+    HABITAT_ENABLE_PHYSICS: "${HABITAT_ENABLE_PHYSICS:-auto}"
+    HABITAT_PHYSICS_CONFIG_FILE: "${HABITAT_PHYSICS_CONFIG_FILE:-}"
+    TZ: "${TZ:-America/New_York}"
+
+services:
+  env:
+    <<: *common
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile.env
+    image: rt-ovn-env:latest
+    container_name: rtnav_env
+    environment:
+      <<: *common-env
+      CUDA_VISIBLE_DEVICES: "0"
+      ENV_STATS_PATH: /opt/rtnav/logs/env_stats.json
+      VIDEO_DIR: ""
+      DISABLE_TOP_DOWN_MAP: "${DISABLE_TOP_DOWN_MAP:-1}"
+      HYDRA_CONFIG_PATH: /opt/rt_ovn/agents/rtnav/config
+      HYDRA_CONFIG_NAME: "${HYDRA_CONFIG_NAME:-}"
+      HYDRA_RUN_DIR: /opt/rtnav/logs/hydra
+      EVAL_SPLIT: "${EVAL_SPLIT:-}"
+      EPISODE_OFFSET: "${EPISODE_OFFSET:-0}"
+      EPISODE_COUNT: "${EPISODE_COUNT:-0}"
+      SIM_VIZ_WEB: "${ENV_VIZ_WEB:-0}"
+      SIM_VIZ_WEB_PORT: "${ENV_VIZ_WEB_PORT:-8767}"
+    volumes:
+      - ../..:/opt/rt_ovn
+      - ../../envs/ovon:/opt/ovon
+      - ${DATA_DIR:?Set DATA_DIR to the dataset root from docs/datasets.md}:${DATA_DIR:?Set DATA_DIR to the dataset root from docs/datasets.md}
+      - ${DATA_DIR:?Set DATA_DIR to the dataset root from docs/datasets.md}:/opt/rt_ovn/data:ro
+      - ${DATA_DIR:?Set DATA_DIR to the dataset root from docs/datasets.md}:/opt/vlfm/data:ro
+      - ./logs:/opt/rtnav/logs
+      - ../utils:/opt/rt_ovn/utils:ro
+      - /tmp/.X11-unix:/tmp/.X11-unix
+    working_dir: /opt/rt_ovn
+    command: >
+      bash -c "
+        source /opt/ros2_ws/install/setup.bash 2>/dev/null || true &&
+        export RUN_DIR=/opt/rtnav/logs &&
+        python /opt/rt_ovn/envs/env_node.py
+      "
+
+  agent:
+    <<: *common
+    build:
+      context: ../..
+      dockerfile: agents/rtnav/docker/Dockerfile
+    image: rt-ovn-agent:latest
+    container_name: rtnav_agent
+    environment:
+      <<: *common-env
+      CUDA_VISIBLE_DEVICES: "0"
+      NUM_EPISODES: "${NUM_EPISODES:--1}"
+      RTNAV_ROOT: /opt/rtnav
+      RT_OVN_ROOT: /opt/rt_ovn
+      RUN_DIR: /opt/rtnav/logs
+      RTNAV_LLM: "${RTNAV_LLM:-qwen3.5}"
+      RTNAV_VLLM_MAX_NUM_SEQS: "${RTNAV_VLLM_MAX_NUM_SEQS:-1}"
+      RTNAV_VLLM_STARTUP_TIMEOUT: "${RTNAV_VLLM_STARTUP_TIMEOUT:-600}"
+      VIDEO_DIR: "${VIDEO_DIR:-/opt/rtnav/logs/videos}"
+      AGENT_VIDEO_MODE: "${VIDEO:-none}"
+      VLLM_USE_FLASHINFER_SAMPLER: "0"
+      FLASHINFER_WORKSPACE_BASE: /tmp
+      USER: "${USER:-rt_ovn}"
+      LOGNAME: "${USER:-rt_ovn}"
+      TORCHINDUCTOR_CACHE_DIR: /tmp/torchinductor_cache
+      POINTNAV_CKPT: "${POINTNAV_CKPT:-/opt/rt_ovn/data/pointnav_weights.pth}"
+      MOBILE_SAM_CHECKPOINT: "${MOBILE_SAM_CHECKPOINT:-/opt/rt_ovn/data/mobile_sam.pt}"
+      RTNAV_ARGS: "${RTNAV_ARGS:-}"
+    volumes:
+      - ../..:/opt/rt_ovn
+      - .:/opt/rtnav
+      - ${DATA_DIR:?Set DATA_DIR to the dataset root from docs/datasets.md}:${DATA_DIR:?Set DATA_DIR to the dataset root from docs/datasets.md}
+      - ${DATA_DIR:?Set DATA_DIR to the dataset root from docs/datasets.md}:/opt/rt_ovn/data
+      - ${DATA_DIR:?Set DATA_DIR to the dataset root from docs/datasets.md}:/opt/vlfm/data:ro
+      - ./logs:/opt/rtnav/logs
+      - ../utils:/opt/rt_ovn/utils:ro
+      - ~/.cache/vllm:/home/roboticslab/.cache/vllm
+      - /tmp/.X11-unix:/tmp/.X11-unix
+    working_dir: /opt/rt_ovn
+    depends_on:
+      - env
+    command: >
+      bash -c "
+        source /opt/ros2_ws/install/setup.bash 2>/dev/null || true &&
+        cd /opt/rt_ovn &&
+        _pyver=$$(python3 -c 'import sys; print(f\"{sys.version_info.major}{sys.version_info.minor}\")') &&
+        for d in agents/rtnav/rtnav/modules/perception/cpp_accel agents/rtnav/rtnav/modules/scenegraph/cpp_accel; do
+          _so=$$(ls $$d/*.cpython-$${_pyver}-*.so 2>/dev/null | head -1);
+          _stale=0;
+          if [ -n \"$$_so\" ]; then
+            for src in $$d/*.cpp $$d/*.h $$d/*.hpp $$d/build.sh; do
+              [ -f \"$$src\" ] && [ \"$$src\" -nt \"$$_so\" ] && _stale=1;
+            done;
+          fi;
+          if [ -z \"$$_so\" ] || [ \"$$_stale\" = 1 ] || ldd \"$$_so\" 2>&1 | grep -q 'not found'; then
+            echo \"[cpp_accel] (re)building $$d (so=$$_so stale=$$_stale)\" && bash $$d/build.sh || echo \"[cpp_accel] build failed in $$d (continuing)\";
+          fi;
+        done &&
+        exec python /opt/rtnav/agent_node.py $${RTNAV_ARGS:-}
+      "

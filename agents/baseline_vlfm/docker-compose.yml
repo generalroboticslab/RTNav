@@ -1,0 +1,134 @@
+# docker-compose.yml — VLFM distributed evaluation via ROS2
+#
+# Usage:
+#   docker compose --profile build build agent_base            # build shared agent base once
+#   docker compose build env agent
+#   MODE=sync  BENCHMARK=ovon docker compose up env agent      # sync OVON eval
+#   MODE=async BENCHMARK=hm3d docker compose up env agent      # async HM3D eval
+#   VLFM_DETECTOR_MODE=owlv2 docker compose up env agent       # force OWLv2
+#   NUM_EPISODES=50 docker compose up env agent                # limited episodes
+# Detector default: HM3D -> YOLOv7+GroundingDINO, OVON -> OWLv2.
+#
+# Both containers share a dedicated ROS2 DDS network via host networking.
+
+x-common: &common
+  runtime: nvidia
+  shm_size: "64g"
+  ipc: host
+  network_mode: host
+  environment: &common-env
+    NVIDIA_VISIBLE_DEVICES: all
+    NVIDIA_DRIVER_CAPABILITIES: all
+    HOME: /tmp
+    USER: rt_ovn
+    LOGNAME: rt_ovn
+    MPLCONFIGDIR: /tmp/matplotlib
+    TORCHINDUCTOR_CACHE_DIR: /tmp/torchinductor
+    TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD: "1"
+    RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
+    ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-42}"
+    # Keep same-host DDS off physical interfaces so Wi-Fi changes are harmless.
+    CYCLONEDDS_URI: file:///opt/rt_ovn/utils/cyclonedds_loopback.xml
+    MODE: "${MODE:-sync}"
+    BENCHMARK: "${BENCHMARK:-ovon}"
+    BASELINE: vlfm
+    HOST_USER_PATH: /opt/vlfm
+    HOST_CHOWN_PATHS: /opt/vlfm/logs:/opt/vlfm/lockfiles:/opt/.cache
+    # Legacy compat
+    VLFM_MODE: "${MODE:-sync}"
+    VLFM_CONFIG: "${BENCHMARK:-ovon}"
+    VLFM_DETECTOR_MODE: "${VLFM_DETECTOR_MODE:-auto}"
+
+services:
+  # ── Shared ROS agent base ────────────────────────────────────────────────
+  agent_base:
+    build:
+      context: ..
+      dockerfile: ../docker/Dockerfile.agent
+    image: rt-ovn-agent-base:latest
+    profiles: ["build"]
+
+  # ── Environment container (Habitat simulator) ─────────────────────────────
+  env:
+    <<: *common
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile.env
+    image: rt-ovn-env:latest
+    container_name: vlfm_env
+    environment:
+      <<: *common-env
+      CUDA_VISIBLE_DEVICES: "0"
+      ENV_STATS_PATH: /opt/vlfm/logs/env_stats.json
+      VIDEO_DIR: ""
+      DISABLE_TOP_DOWN_MAP: "1"
+      HYDRA_CONFIG_PATH: /opt/rt_ovn/env_config
+      HYDRA_RUN_DIR: /opt/vlfm/logs/hydra
+      EVAL_SPLIT: "${EVAL_SPLIT:-}"
+      EPISODE_OFFSET: "${EPISODE_OFFSET:-0}"
+      EPISODE_COUNT: "${EPISODE_COUNT:-0}"
+    volumes:
+      - ./vlfm:/opt/vlfm
+      - ../../envs/ovon:/opt/ovon
+      - ${DATA_DIR:?Set DATA_DIR to the dataset root from docs/datasets.md}:/opt/rt_ovn/data:ro
+      - ./logs:/opt/vlfm/logs
+      - ../utils:/opt/rt_ovn/utils:ro
+      - ../../envs/env_node.py:/opt/rt_ovn/env_node.py:ro
+      - ../../envs/habitat_env.py:/opt/rt_ovn/habitat_env.py:ro
+      - ../../envs/async_ui.py:/opt/rt_ovn/async_ui.py:ro
+      - ../../envs/config:/opt/rt_ovn/env_config:ro
+    working_dir: /opt/vlfm
+    command: >
+      bash -c "
+        source /opt/ros2_ws/install/setup.bash 2>/dev/null || true &&
+        cd /opt/vlfm/vlfm &&
+        python /opt/rt_ovn/env_node.py
+      "
+
+  # ── Agent container (VLFM policy + VLM servers) ───────────────────────────
+  agent:
+    <<: *common
+    build:
+      context: ../..
+      dockerfile: agents/baseline_vlfm/Dockerfile
+      args:
+        BASE_IMAGE: rt-ovn-env:latest
+    image: vlfm-agent:latest
+    container_name: vlfm_agent
+    environment:
+      <<: *common-env
+      CUDA_VISIBLE_DEVICES: "0"
+      NUM_EPISODES: "${NUM_EPISODES:--1}"
+      POINTNAV_WEIGHTS: data/pointnav_weights.pth
+      OVON_CLIP_CACHE: /opt/vlfm/data/hm3d_ovon/text_embeddings/siglip.pkl
+      VLFM_DUMMY_POLICY_PATH: /tmp/rt_ovn/dummy_policy.pth
+      VIDEO_DIR: /opt/vlfm/logs/videos
+      AGENT_VIDEO_MODE: "${VIDEO:-none}"
+    volumes:
+      - ./vlfm:/opt/vlfm
+      - ${DATA_DIR:?Set DATA_DIR to the dataset root from docs/datasets.md}:/opt/vlfm/data
+      - ./logs:/opt/vlfm/logs
+      - ../utils:/opt/rt_ovn/utils:ro
+      - ./agent_node.py:/opt/rt_ovn/agent_node.py:ro
+    working_dir: /opt/vlfm
+    depends_on:
+      - env
+    command: >
+      bash -c "
+        source /opt/ros2_ws/install/setup.bash 2>/dev/null || true &&
+        cd /opt/vlfm &&
+        VLM_RUNTIME_DIR=/tmp/rt_ovn/vlfm_servers &&
+        rm -rf $$VLM_RUNTIME_DIR &&
+        mkdir -p $$VLM_RUNTIME_DIR &&
+        ln -sfn /opt/vlfm/data $$VLM_RUNTIME_DIR/data &&
+        ln -sfn /opt/vlfm/vlfm $$VLM_RUNTIME_DIR/vlfm &&
+        ln -sfn /opt/vlfm/yolov7 $$VLM_RUNTIME_DIR/yolov7 &&
+        echo 'Starting VLM servers …' &&
+        cd $$VLM_RUNTIME_DIR &&
+        CUDA_VISIBLE_DEVICES=0 /opt/vlfm/scripts/launch_vlm_servers.sh &&
+        sleep 5 &&
+        source vlm_ports_*.env 2>/dev/null || true &&
+        cd /opt/vlfm &&
+        python -m vlfm.utils.generate_dummy_policy &&
+        python /opt/rt_ovn/agent_node.py
+      "

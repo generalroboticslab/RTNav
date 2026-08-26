@@ -1,0 +1,28 @@
+# rt_ovn authors: working dependency set for GAMap on Python 3.9 + CUDA >12.
+# Upstream requirements.txt keeps the original (py3.7-era) pins; this file has the
+# py3.9-installable versions. Install AFTER torch. Two deps are NOT here because
+# they need pip flags a requirements file can't express -- they are installed
+# separately in setup_gamap.sh:
+#   - detectron2         (git source + --no-build-isolation)
+#   - salesforce-lavis   (--no-deps, so it can't upgrade torch)
+
+# superseded upstream pins (no py3.9 wheels)
+scikit-fmm
+scikit-learn==0.24.2
+scikit-image==0.19.3
+numpy==1.26.4
+Pillow==9.5.0
+
+# upstream deps, unchanged
+ifcfg
+transformers==4.23.1
+tensorboard
+
+# lavis (BLIP/CLIP) import-chain deps -- lavis itself is installed --no-deps
+pandas
+einops
+contexttimer
+sentencepiece
+spacy<3.8
+pycocoevalcap
+opencv-python==4.5.5.64

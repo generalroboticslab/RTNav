@@ -1,0 +1,131 @@
+# docker-compose.yml — GAMap distributed evaluation via ROS2
+#
+# Usage:
+#   cd agents/baseline_gamap
+#   docker compose --profile build build agent_base
+#   docker compose build env agent
+#   BENCHMARK=hm3d_v1 MODE=sync docker compose up env agent
+
+x-common: &common
+  runtime: nvidia
+  shm_size: "64g"
+  ipc: host
+  network_mode: host
+  environment: &common-env
+    NVIDIA_VISIBLE_DEVICES: all
+    NVIDIA_DRIVER_CAPABILITIES: all
+    HOME: /tmp
+    MPLCONFIGDIR: /tmp/matplotlib
+    RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
+    ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-44}"
+    CYCLONEDDS_URI: file:///opt/rt_ovn/utils/cyclonedds.xml
+    MODE: "${MODE:-sync}"
+    BENCHMARK: "${BENCHMARK:-hm3d_v1}"
+    BASELINE: gamap
+    HOST_USER_PATH: /opt/gamap
+    HOST_CHOWN_PATHS: /opt/gamap/logs:/opt/.cache
+    GAMAP_MODE: "${MODE:-sync}"
+    OMP_NUM_THREADS: "${OMP_NUM_THREADS:-1}"
+    MKL_NUM_THREADS: "${MKL_NUM_THREADS:-1}"
+    OPENBLAS_NUM_THREADS: "${OPENBLAS_NUM_THREADS:-1}"
+    NUMEXPR_NUM_THREADS: "${NUMEXPR_NUM_THREADS:-1}"
+    KMP_DUPLICATE_LIB_OK: "${KMP_DUPLICATE_LIB_OK:-TRUE}"
+
+services:
+  agent_base:
+    build:
+      context: ..
+      dockerfile: ../docker/Dockerfile.agent
+    image: rt-ovn-agent-base:latest
+    profiles: ["build"]
+
+  env:
+    <<: *common
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile.env
+    image: rt-ovn-env:latest
+    container_name: gamap_env
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${GPU:-0}"]
+              capabilities: [gpu]
+    environment:
+      <<: *common-env
+      CUDA_VISIBLE_DEVICES: "0"
+      ENV_STATS_PATH: /opt/gamap/logs/env_stats.json
+      VIDEO_DIR: "${VIDEO_DIR:-/opt/gamap/logs/videos}"
+      HYDRA_CONFIG_PATH: /opt/rt_ovn/env_config
+      HYDRA_CONFIG_NAME: "${HYDRA_CONFIG_NAME:-${BENCHMARK:-hm3d_v1}}"
+      HYDRA_RUN_DIR: /opt/gamap/logs/hydra
+      EVAL_SPLIT: "${EVAL_SPLIT:-}"
+      EPISODE_OFFSET: "${EPISODE_OFFSET:-0}"
+      EPISODE_COUNT: "${EPISODE_COUNT:-0}"
+    volumes:
+      - ./GAMap:/opt/gamap
+      - ${DATA_DIR:?Set DATA_DIR to the dataset root from docs/datasets.md}:/opt/rt_ovn/data:ro
+      - ./logs:/opt/gamap/logs
+      - ../utils:/opt/rt_ovn/utils:ro
+      - ../../envs/env_node.py:/opt/rt_ovn/env_node.py:ro
+      - ../../envs/habitat_env.py:/opt/rt_ovn/habitat_env.py:ro
+      - ../../envs/async_ui.py:/opt/rt_ovn/async_ui.py:ro
+      - ../../envs/config:/opt/rt_ovn/env_config:ro
+    working_dir: /opt/gamap
+    command: >
+      bash -c "
+        source /opt/ros2_ws/install/setup.bash 2>/dev/null || true &&
+        cd /opt/gamap &&
+        python /opt/rt_ovn/env_node.py
+      "
+
+  agent:
+    <<: *common
+    build:
+      context: ../..
+      dockerfile: agents/baseline_gamap/Dockerfile
+      args:
+        BASE_IMAGE: rt-ovn-agent-base:latest
+    image: gamap-agent:latest
+    container_name: gamap_agent
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${GPU:-0}"]
+              capabilities: [gpu]
+    environment:
+      <<: *common-env
+      CUDA_VISIBLE_DEVICES: "0"
+      NUM_EPISODES: "${NUM_EPISODES:--1}"
+      VIDEO_DIR: "${VIDEO_DIR:-/opt/gamap/logs/videos}"
+      GAMAP_ROOT: /opt/gamap
+      GAMAP_REDNET_PATH: RedNet/model/rednet_semmap_mp3d_40.pth
+      GAMAP_NUM_LOCAL_STEPS: "${GAMAP_NUM_LOCAL_STEPS:-10}"
+      GAMAP_TASK_CONFIG: tasks/objectnav_hm3d.yaml
+      GAMAP_VERSION: v1
+      GAMAP_BLIP_GPU_ID: "0"
+      XDG_CACHE_HOME: /opt/.cache
+      HF_HOME: /opt/.cache/huggingface
+      TRANSFORMERS_CACHE: /opt/.cache/huggingface
+      TORCH_HOME: /opt/.cache/torch
+      FVCORE_CACHE: /opt/.cache/fvcore
+    volumes:
+      - ./GAMap:/opt/gamap
+      - ${DATA_DIR:?Set DATA_DIR to the dataset root from docs/datasets.md}:/opt/gamap/data:ro
+      - ./logs:/opt/gamap/logs
+      - ../utils:/opt/rt_ovn/utils:ro
+      - ./agent_node.py:/opt/rt_ovn/agent_node.py:ro
+    working_dir: /opt/gamap
+    depends_on:
+      - env
+    command: >
+      bash -c "
+        source /opt/ros2_ws/install/setup.bash 2>/dev/null || true &&
+        cd /opt/gamap &&
+        mkdir -p /opt/.cache/huggingface /opt/.cache/torch /opt/.cache/fvcore &&
+        python /opt/rt_ovn/agent_node.py
+      "

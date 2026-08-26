@@ -1,0 +1,69 @@
+# Python and native build artifacts
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+.venv/
+.pytest_cache/
+.mypy_cache/
+build/
+install/
+log/
+
+# Editor and OS metadata
+.DS_Store
+Thumbs.db
+.claude/
+.vscode/
+
+# Local credentials and environments
+*.env
+!Dockerfile.env
+key.txt
+apikey.txt
+.release-extras/
+.manim_env/
+docs/OLD_DOCS/
+
+# Downloaded datasets and model artifacts
+/data/
+*.pth
+*.pth.[0-9]*
+*.pt
+*.part
+*.zip
+**/weights/
+agents/baseline_trihelper/TriHelper/pretrained_models/
+agents/baseline_beliefmapnav/BeliefMapNav/data/
+agents/baseline_beliefmapnav/BeliefMapNav/yolov7
+agents/baseline_openfmnav/OpenFMNav/Grounded_SAM/*.pth.1
+agents/ours_rtnav/
+
+# Generated evaluation artifacts
+.locks/
+outputs/
+tb/
+lockfiles/
+agents/**/logs*/
+agents/**/docker-compose.parallel.yml
+agents/rtnav/.last_*
+agents/rtnav/.agent_image_rebuild.log
+agents/baseline_vlfm/vlfm/episode_vids/
+agents/baseline_vlfm/vlfm/hm3d_episodes/
+agents/baseline_vlfm/vlfm/owlv2_vis_output/
+agents/baseline_vlfm/vlfm/video_dir/
+agents/baseline_l3mvn/L3MVN/tmp/
+agents/baseline_trihelper/TriHelper/tmp/
+agents/baseline_gamap/GAMap/tmp/
+agents/baseline_gamap/GAMap/vis/
+agents/baseline_openfmnav/OpenFMNav/tmp/
+agents/baseline_openfmnav/OpenFMNav/output_sam/
+agents/baseline_beliefmapnav/BeliefMapNav/outputs/
+agents/baseline_l3mvn/trace_*
+agents/probes/runs/
+parallel_run.txt
+*.mp4
+*.log
+
+# Simulator analysis artifacts are not part of the real-world submodule branch.
+/results/

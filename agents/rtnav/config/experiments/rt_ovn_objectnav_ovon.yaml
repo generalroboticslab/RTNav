@@ -1,0 +1,87 @@
+# @package _global_
+#
+# Minimal OVON config for the rt_ovn env container.
+# Drops vlfm_policy / traveled_stairs / frontier sensors — those require
+# the VLFM Python package which is not installed in the env image.
+
+defaults:
+  - /habitat_baselines: habitat_baselines_rl_config_base
+  - stretch_ovon
+  - /habitat/task/lab_sensors:
+      - compass_sensor
+      - gps_sensor
+      - heading_sensor
+      - clip_objectgoal_sensor
+  - /habitat/task/measurements:
+      - failure_modes
+      - top_down_map
+  - _self_
+
+habitat:
+  environment:
+    iterator_options:
+      max_scene_repeat_steps: 50000
+  task:
+    success_reward: 2.5
+    slack_reward: -1e-3
+    lab_sensors:
+      clip_objectgoal_sensor:
+        cache: /opt/rt_ovn/data/hm3d_ovon/text_embeddings/siglip.pkl
+    measurements:
+      top_down_map:
+        draw_goal_aabbs: False
+      success:
+        success_distance: 0.25
+      distance_to_goal:
+        type: OVONDistanceToGoal
+  dataset:
+    type: "OVON-v1"
+    split: val_unseen
+    data_path: /opt/rt_ovn/data/datasets/ovon/hm3d/{split}/{split}_hard.json.gz
+    scenes_dir: /opt/rt_ovn/data/versioned_data/hm3d-0.2
+  simulator:
+    type: "OVONSim-v0"
+    scene_dataset: /opt/rt_ovn/data/versioned_data/hm3d-0.2/hm3d/hm3d_annotated_basis.scene_dataset_config.json
+    turn_angle: 30
+    navmesh_settings:
+      agent_max_climb: 0.1
+      cell_height: 0.05
+
+habitat_baselines:
+  evaluate: True
+  eval_ckpt_path_dir: data/dummy_policy.pth
+  num_environments: 1
+  load_resume_state_config: False
+  torch_gpu_id: 0
+  trainer_name: "vlfm"
+  num_updates: 270000
+  log_interval: 10
+  num_checkpoints: 100
+  force_torch_single_threaded: True
+  eval:
+    split: "val_unseen"
+  rl:
+    policy:
+      name: "PointNavResNetPolicy"
+    ppo:
+      clip_param: 0.2
+      ppo_epoch: 4
+      num_mini_batch: 2
+      value_loss_coef: 0.5
+      entropy_coef: 0.01
+      lr: 2.5e-4
+      eps: 1e-5
+      max_grad_norm: 0.2
+      num_steps: 64
+      use_gae: True
+      gamma: 0.99
+      tau: 0.95
+      use_linear_clip_decay: False
+      use_linear_lr_decay: False
+      reward_window_size: 50
+      use_normalized_advantage: False
+      hidden_size: 512
+
+hydra:
+  run:
+    dir: ${oc.env:HYDRA_RUN_DIR,/tmp/rt_ovn_hydra}/${now:%Y-%m-%d}/${now:%H-%M-%S}

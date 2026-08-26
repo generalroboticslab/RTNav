@@ -1,0 +1,41 @@
+diff --git a/3rdparty/stdgpu/stdgpu.cmake b/3rdparty/stdgpu/stdgpu.cmake
+index a725f22..9c6d83a 100644
+--- a/3rdparty/stdgpu/stdgpu.cmake
++++ b/3rdparty/stdgpu/stdgpu.cmake
+@@ -11,6 +11,7 @@ ExternalProject_Add(
+     URL_HASH SHA256=86e50789bbe21c57f64358c6acbd4481d56c1e45ce9ba1fb5c5c8482c3973215
+     DOWNLOAD_DIR "${OPEN3D_THIRD_PARTY_DOWNLOAD_DIR}/stdgpu"
+     UPDATE_COMMAND ""
++    PATCH_COMMAND patch -p1 -i /tmp/stdgpu-cuda13.patch
+     CMAKE_ARGS
+         -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
+         -DCUDAToolkit_ROOT=${CUDAToolkit_LIBRARY_ROOT}
+@@ -19,7 +20,9 @@ ExternalProject_Add(
+         -DSTDGPU_BUILD_TESTS=OFF
+         -DSTDGPU_BUILD_BENCHMARKS=OFF
+         -DSTDGPU_ENABLE_CONTRACT_CHECKS=OFF
+-        -DTHRUST_INCLUDE_DIR=${CUDAToolkit_INCLUDE_DIRS}
++        -DTHRUST_INCLUDE_DIR=${CUDAToolkit_INCLUDE_DIRS}/cccl
++        -DLIBCUDACXX_INCLUDE_DIR=${CUDAToolkit_INCLUDE_DIRS}/cccl
++        -DCUB_INCLUDE_DIR=${CUDAToolkit_INCLUDE_DIRS}/cccl
+         ${ExternalProject_CMAKE_ARGS_hidden}
+     CMAKE_CACHE_ARGS    # Lists must be passed via CMAKE_CACHE_ARGS
+         -DCMAKE_CUDA_ARCHITECTURES:STRING=${CMAKE_CUDA_ARCHITECTURES}
+diff --git a/cpp/open3d/io/file_format/FileOBJ.cpp b/cpp/open3d/io/file_format/FileOBJ.cpp
+index dfa715f..3146f57 100644
+--- a/cpp/open3d/io/file_format/FileOBJ.cpp
++++ b/cpp/open3d/io/file_format/FileOBJ.cpp
+@@ -280,12 +280,7 @@ bool WriteTriangleMeshToOBJ(const std::string& filename,
+     if (mesh.HasTriangleMaterialIds()) {
+         for (size_t i = 0; i < mesh.triangle_material_ids_.size(); ++i) {
+             int mi = mesh.triangle_material_ids_[i];
+-            auto it = material_id_faces_map.find(mi);
+-            if (it == material_id_faces_map.end()) {
+-                material_id_faces_map[mi] = {i};
+-            } else {
+-                it->second.push_back(i);
+-            }
++            material_id_faces_map[mi].push_back(i);
+         }
+     } else {  // every face falls to the default material
+         material_id_faces_map[0].resize(mesh.triangles_.size());

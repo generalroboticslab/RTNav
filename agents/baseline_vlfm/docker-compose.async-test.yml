@@ -1,0 +1,28 @@
+# Override for running async alongside sync on a different GPU/domain.
+# Usage: docker compose -p vlfm_async -f docker-compose.yml -f docker-compose.async-test.yml up
+services:
+  env:
+    container_name: vlfm_env_async
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["6"]
+              capabilities: [gpu]
+    environment:
+      ROS_DOMAIN_ID: "43"
+
+  agent:
+    container_name: vlfm_agent_async
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["6"]
+              capabilities: [gpu]
+    environment:
+      ROS_DOMAIN_ID: "43"
+      ROBOT_LINEAR_SPEED: "1.0"
+      ROBOT_ANGULAR_SPEED: "2.0"

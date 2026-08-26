@@ -1,0 +1,13 @@
+.git
+**/__pycache__
+**/.pytest_cache
+**/*.mp4
+**/*.part
+**/*.rrd
+agents/rtnav/rtnav/modules/perception/weights
+agents/rtnav/rtnav/task/task_parser/weights
+build
+install
+log
+outputs
+results
