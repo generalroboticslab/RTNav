@@ -1,0 +1,88 @@
+# @package _global_
+
+# Shared OVON environment config for all baselines.
+defaults:
+  - /habitat_baselines: habitat_baselines_rl_config_base
+  - /habitat: habitat_config_base
+  - /habitat/task: objectnav
+  - /habitat/simulator/agents@habitat.simulator.agents.main_agent: rgbds_agent
+  - /habitat/dataset/objectnav: hm3d
+  - /habitat/task/lab_sensors:
+      - base_explorer
+      - compass_sensor
+      - gps_sensor
+      - heading_sensor
+      - frontier_sensor
+      - clip_objectgoal_sensor
+  - /habitat/task/measurements:
+      - failure_modes
+      - top_down_map
+  - _self_
+
+habitat:
+  environment:
+    max_episode_steps: 500
+    iterator_options:
+      max_scene_repeat_steps: 50000
+  task:
+    success_reward: 2.5
+    slack_reward: -1e-3
+    lab_sensors:
+      base_explorer:
+        turn_angle: 30
+      clip_objectgoal_sensor:
+        cache: /opt/rt_ovn/data/hm3d_ovon/text_embeddings/siglip.pkl
+    measurements:
+      top_down_map:
+        draw_goal_aabbs: false
+      success:
+        success_distance: 0.25
+      distance_to_goal:
+        type: OVONDistanceToGoal
+  dataset:
+    type: OVON-v1
+    split: val_unseen
+    data_path: /opt/rt_ovn/data/datasets/ovon/hm3d/{split}/{split}_hard.json.gz
+    scenes_dir: /opt/rt_ovn/data/versioned_data/hm3d-0.2
+  simulator:
+    type: OVONSim-v0
+    scene_dataset: /opt/rt_ovn/data/versioned_data/hm3d-0.2/hm3d/hm3d_annotated_basis.scene_dataset_config.json
+    turn_angle: 30
+    tilt_angle: 30
+    action_space_config: v1
+    agents:
+      main_agent:
+        sim_sensors:
+          rgb_sensor:
+            width: 360
+            height: 640
+            hfov: 42
+            position: [0, 1.31, 0]
+          depth_sensor:
+            width: 360
+            height: 640
+            hfov: 42
+            position: [0, 1.31, 0]
+          semantic_sensor:
+            width: 360
+            height: 640
+            hfov: 42
+            position: [0, 1.31, 0]
+        height: 1.41
+        radius: 0.17
+    habitat_sim_v0:
+      gpu_device_id: 0
+      allow_sliding: false
+    navmesh_settings:
+      agent_max_climb: 0.1
+      cell_height: 0.05
+
+habitat_baselines:
+  num_environments: 1
+  force_torch_single_threaded: true
+  eval:
+    split: val_unseen
+
+hydra:
+  run:
+    dir: ${oc.env:HYDRA_RUN_DIR,/tmp/rt_ovn_hydra}/${now:%Y-%m-%d}/${now:%H-%M-%S}

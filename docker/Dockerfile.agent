@@ -1,0 +1,57 @@
+# syntax=docker/dockerfile:1.7
+
+FROM mambaorg/micromamba:1.5.10-focal
+
+USER root
+SHELL ["/usr/local/bin/_dockerfile_shell.sh"]
+ARG MAMBA_DOCKERFILE_ACTIVATE=1
+ENV DEBIAN_FRONTEND=noninteractive
+
+WORKDIR /opt
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential ca-certificates gosu \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN micromamba install -y -n base \
+      -c robostack-humble -c conda-forge \
+      python=3.9 pip \
+      ros-humble-rclpy \
+      ros-humble-std-msgs \
+      ros-humble-sensor-msgs \
+      ros-humble-rmw-cyclonedds-cpp \
+      ros-humble-rosidl-default-generators \
+      ros-humble-rosidl-default-runtime \
+      colcon-common-extensions \
+    && micromamba clean --all --yes
+
+ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp \
+    AMENT_PREFIX_PATH=/opt/conda \
+    COLCON_PREFIX_PATH=/opt/conda \
+    CMAKE_PREFIX_PATH=/opt/conda \
+    ROS_DISTRO=humble \
+    ROS_VERSION=2 \
+    ROS_PYTHON_VERSION=3 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# Shared ROS messages and Python helpers used by all agent containers.
+COPY utils/ros_msgs /opt/ros2_ws/src/ros_msgs
+RUN /bin/bash -c "cd /opt/ros2_ws && \
+    colcon build --packages-select ros_msgs && \
+    echo 'source /opt/ros2_ws/install/setup.bash' >> /etc/bash.bashrc"
+
+COPY utils/ros_helpers.py    /opt/rt_ovn/utils/ros_helpers.py
+COPY utils/robot_api.py      /opt/rt_ovn/utils/robot_api.py
+COPY utils/video_recorder.py /opt/rt_ovn/utils/video_recorder.py
+COPY utils/base_agent.py     /opt/rt_ovn/utils/base_agent.py
+COPY utils/cyclonedds.xml    /opt/rt_ovn/utils/cyclonedds.xml
+
+ENV PYTHONPATH=/opt/rt_ovn:/opt/rt_ovn/utils:${PYTHONPATH}
+
+WORKDIR /opt
+
+COPY utils/entrypoint.sh /opt/entrypoint.sh
+RUN chmod 755 /opt/entrypoint.sh
+ENTRYPOINT ["/opt/entrypoint.sh"]
+CMD ["/bin/bash"]

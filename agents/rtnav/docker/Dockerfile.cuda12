@@ -1,0 +1,85 @@
+# syntax=docker/dockerfile:1.7
+# RTNav agent for hosts whose NVIDIA driver supports CUDA 12.x but not CUDA 13.
+
+FROM ros:humble
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# ---------- System deps ----------
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        build-essential python3 python3-pip python3-dev cmake git gosu \
+        libgl1 libglib2.0-0 libsm6 libxext6 libxrender1 libgomp1 \
+        libglvnd0 libglx0 libegl1 libopengl0 \
+        tesseract-ocr libtesseract-dev libopencv-dev ffmpeg \
+        python3-colcon-common-extensions ros-humble-rmw-cyclonedds-cpp \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/python3 /usr/bin/python \
+    && pip3 install --upgrade pip
+
+WORKDIR /opt/rt_ovn
+
+# ---------- ROS2 ros_msgs build ----------
+COPY agents/utils/ros_msgs /opt/ros2_ws/src/ros_msgs
+RUN bash -c "source /opt/ros/humble/setup.bash && \
+        cd /opt/ros2_ws && \
+        colcon build --packages-select ros_msgs && \
+        echo 'source /opt/ros2_ws/install/setup.bash' >> /etc/bash.bashrc"
+
+# ---------- CUDA / torch / vLLM ----------
+# Keep vLLM and its exact PyTorch dependency aligned. CUDA 12.x provides
+# minor-version compatibility with the host's CUDA 12.2-capable driver.
+RUN pip3 install --ignore-installed blinker && \
+    pip3 install \
+        torch==2.10.0 torchvision==0.25.0 \
+        --index-url https://download.pytorch.org/whl/cu128 && \
+    pip3 install vllm==0.17.0 \
+        --extra-index-url https://download.pytorch.org/whl/cu128
+
+# ---------- Project requirements ----------
+COPY agents/rtnav/rtnav/requirements.txt /opt/rt_ovn/requirements.txt
+# vLLM 0.17 requires Transformers >=4.56,<5, so retain the version selected
+# above instead of applying the CUDA 13 image's Transformers 5 pin.
+RUN grep -Ev '^(vllm|transformers)' /opt/rt_ovn/requirements.txt > /opt/rt_ovn/requirements.cuda12.txt && \
+    pip3 install \
+        --extra-index-url https://download.pytorch.org/whl/cu128 \
+        -r /opt/rt_ovn/requirements.cuda12.txt && \
+    pip3 check && \
+    python -c "import imageio_ffmpeg; print('imageio-ffmpeg binary at:', imageio_ffmpeg.get_ffmpeg_exe())"
+
+# ---------- Utils ----------
+COPY agents/utils/ros_helpers.py    /opt/rt_ovn/utils/ros_helpers.py
+COPY agents/utils/robot_api.py      /opt/rt_ovn/utils/robot_api.py
+COPY agents/utils/video_recorder.py /opt/rt_ovn/utils/video_recorder.py
+COPY agents/utils/base_agent.py     /opt/rt_ovn/utils/base_agent.py
+COPY agents/utils/cyclonedds.xml    /opt/rt_ovn/utils/cyclonedds.xml
+
+# ---------- C++ acceleration modules ----------
+COPY agents/rtnav/rtnav/modules/scenegraph/cpp_accel /opt/sg_accel_src
+COPY agents/rtnav/rtnav/modules/perception/cpp_accel /opt/perception_accel_src
+RUN pip3 install --no-build-isolation \
+        /opt/sg_accel_src \
+        /opt/perception_accel_src && \
+    rm -rf /opt/sg_accel_src /opt/perception_accel_src
+
+# ---------- MobileSAM ----------
+# Checkpoint fetched separately into $DATA_DIR (see docs/baselines.md).
+RUN python -m pip install --no-cache-dir \
+      "mobile_sam @ git+https://github.com/ChaoningZhang/MobileSAM.git"
+
+# ---------- Entrypoint ----------
+COPY agents/utils/entrypoint.sh /opt/entrypoint.sh
+RUN chmod +x /opt/entrypoint.sh
+
+ENV PYTORCH_ALLOC_CONF=expandable_segments:True \
+    FASTDDS_BUILTIN_TRANSPORTS=UDPv4 \
+    RMW_IMPLEMENTATION=rmw_cyclonedds_cpp \
+    RTNAV_ROOT=/opt/rtnav \
+    RT_OVN_ROOT=/opt/rt_ovn \
+    PYTHONPATH=/opt/rt_ovn/agents:/opt/rt_ovn:/opt/rt_ovn/utils:/opt/rtnav
+
+ENTRYPOINT ["/opt/entrypoint.sh"]
+CMD ["/bin/bash", "--login"]

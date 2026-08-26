@@ -1,0 +1,4 @@
+float32 linear_velocity
+float32 angular_velocity
+float32 camera_pitch_velocity
+uint64 agent_step_id

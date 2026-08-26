@@ -1,0 +1,23 @@
+open3d-cpu
+scikit-image>=0.22
+opencv-python>=4.9.0
+accelerate>=0.26.0
+sentence-transformers
+sentencepiece
+rerun-sdk
+aiohttp
+imageio
+imageio-ffmpeg
+adjustText
+pytesseract
+pybind11
+bitsandbytes
+autoawq
+transformers==5.10.1
+timm
+# Needed by baseline_pointnav: the BDAI PointNav checkpoint pickles an
+# omegaconf DictConfig as its training config, which has to be
+# deserialized at torch.load time even on the no-habitat fallback path.
+omegaconf
+git+https://github.com/naokiyokoyama/frontier_exploration.git
+git+https://github.com/naokiyokoyama/depth_camera_filtering

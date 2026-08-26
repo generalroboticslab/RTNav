@@ -1,0 +1,6 @@
+RedNet/model/*
+vis/*
+tmp/*
+data/*
+*.symlink
+**/__pycache__/
