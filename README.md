@@ -14,13 +14,15 @@
   <em>Duke University &middot; <a href="http://generalroboticslab.com/">General Robotics Lab</a></em>
 </p>
 
-<strong><a href="https://generalroboticslab.com/RTNav">Project Website</a></strong>
+**[Project Website](https://generalroboticslab.com/RTNav)**
 
 </div>
 
 <div align="center">
   <img src="docs/teaser.png" alt="RTNav overview" width="900"/>
 </div>
+
+> **Looking for real-world deployment?** See the [RTNav Real-World repository](https://github.com/generalroboticslab/RTNav-RealWorld).
 
 RTNav studies zero-shot object navigation in real-time environments. The simulator continues to step at a constant frequency while the agent computes actions. This repository contains RTNav, a modular, asynchronous navigation agent, and a unified evaluation framework for real-time object navigation, with support for 6 baselines.
 
