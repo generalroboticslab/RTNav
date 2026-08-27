@@ -123,4 +123,4 @@ Results across subsets are merged into `agents/rtnav/logs_parallel/live.json`.
 
 ## Acknowledgement
 
-This work was supported by the DARPA TIAMAT program. We thank the authors of Habitat, OVON, VLFM, L3MVN, TriHelper, GAMap, OpenFMNav, and BeliefMapNav for their open-source research and implementations.
+This work is supported by DARPA TIAMAT program under award HR00112490419, ARO under award W911NF2410405, and ARL STRONG program under awards W911NF2320182, W911NF2220113, and W911NF242021.. We thank the authors of Habitat, OVON, VLFM, L3MVN, TriHelper, GAMap, OpenFMNav, and BeliefMapNav for their open-source research and implementations.
