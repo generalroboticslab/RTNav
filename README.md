@@ -14,7 +14,7 @@
   <em>Duke University &middot; <a href="http://generalroboticslab.com/">General Robotics Lab</a></em>
 </p>
 
-**[Project Website](https://generalroboticslab.com/RTNav)**
+**[Project Website](https://generalroboticslab.com/RTNav), [Video](https://www.youtube.com/watch?v=YsEj6Qc_EqM)**
 
 </div>
 
@@ -116,7 +116,7 @@ Results across subsets are merged into `agents/rtnav/logs_parallel/live.json`.
 @article{lee2026rtnav,
   title   = {{RTNav}: Towards Real-Time Zero-Shot Object Navigation},
   author  = {Lee, Easop and Zhang, Lingyu and Chen, Boyuan},
-  journal = {arXiv preprint arXiv:XXXX.XXXXX},
+  journal = {arXiv preprint arXiv:2608.26496},
   year    = {2026},
 }
 ```
